@@ -16,6 +16,12 @@ def _save(fig: plt.Figure, path: Path) -> None:
     plt.close(fig)
 
 
+def _metric_column(metrics: pd.DataFrame, explicit_name: str, compatibility_name: str) -> str:
+    if explicit_name in metrics.columns:
+        return explicit_name
+    return compatibility_name
+
+
 def pipeline_diagram(path: Path) -> None:
     fig, ax = plt.subplots(figsize=(13, 2.8))
     ax.axis("off")
@@ -89,10 +95,21 @@ def precision_recall_f1_by_method(metrics: pd.DataFrame, path: Path) -> None:
     subset = metrics[(metrics["detection_type"] == "temporal") & (metrics["k"] == 1)].copy()
     if subset.empty:
         subset = metrics.copy()
-    melted = subset.melt(id_vars=["method"], value_vars=["precision", "recall", "f1"], var_name="metric", value_name="value")
+    metric_labels = {
+        _metric_column(subset, "alarm_precision", "precision"): "Alarm precision",
+        _metric_column(subset, "event_recall", "recall"): "Event recall",
+        _metric_column(subset, "alarm_event_f1", "f1"): "Alarm-event F1",
+    }
+    melted = subset.melt(
+        id_vars=["method"],
+        value_vars=list(metric_labels),
+        var_name="metric",
+        value_name="value",
+    )
+    melted["metric"] = melted["metric"].map(metric_labels)
     sns.barplot(data=melted, x="method", y="value", hue="metric", ax=ax, palette="Set2")
     ax.set_ylim(0, 1.05)
-    ax.set_title("Precision, recall, and F1 by method")
+    ax.set_title("Alarm/event metrics by method")
     ax.set_xlabel("Method")
     ax.set_ylabel("Score")
     _save(fig, path)
@@ -106,11 +123,12 @@ def feature_model_comparison(metrics: pd.DataFrame, path: Path) -> None:
     if subset.empty:
         ax.text(0.5, 0.5, "No DenStream metrics available", ha="center", va="center")
     else:
-        sns.barplot(data=subset, x="feature_mode", y="f1", hue="dataset", ax=ax, palette="Set3")
+        f1_col = _metric_column(subset, "alarm_event_f1", "f1")
+        sns.barplot(data=subset, x="feature_mode", y=f1_col, hue="dataset", ax=ax, palette="Set3")
         ax.set_ylim(0, 1.05)
         ax.set_xlabel("Feature mode")
-        ax.set_ylabel("F1")
-        ax.set_title("Feature-mode comparison")
+        ax.set_ylabel("Alarm-event F1")
+        ax.set_title("Feature-mode comparison by alarm-event F1")
     _save(fig, path)
 
 
@@ -120,11 +138,12 @@ def temporal_vs_spatial_k_sweep(metrics: pd.DataFrame, path: Path) -> None:
     if subset.empty:
         ax.text(0.5, 0.5, "No DenStream metrics available", ha="center", va="center")
     else:
-        sns.lineplot(data=subset, x="k", y="f1", hue="detection_type", style="feature_mode", marker="o", ax=ax)
+        f1_col = _metric_column(subset, "alarm_event_f1", "f1")
+        sns.lineplot(data=subset, x="k", y=f1_col, hue="detection_type", style="feature_mode", marker="o", ax=ax)
         ax.set_ylim(0, 1.05)
-        ax.set_title("Temporal vs spatial k sweep")
-        ax.set_xlabel("k")
-        ax.set_ylabel("F1")
+        ax.set_title("Temporal vs spatial alarm k sweep")
+        ax.set_xlabel("Alarm aggregation k")
+        ax.set_ylabel("Alarm-event F1")
     _save(fig, path)
 
 

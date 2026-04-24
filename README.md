@@ -4,11 +4,21 @@ Reproducible ITCS 5154 implementation for Putina et al. (2018), "Telemetry-based
 
 ## Setup
 
-```bash
+Windows PowerShell:
+
+```powershell
 python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
+
+Optional activation command:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Notebook/Jupyter dependencies are optional and live in `requirements-dev.txt`. Use a short repo path such as `C:\Users\<user>\Github\...` on Windows to avoid long-path package installation issues.
 
 ## Data Acquisition
 
@@ -26,27 +36,29 @@ The cloned reproduction repo contains node-level CSVs in `data/external/OutlierD
 
 Write only the source-data inventories:
 
-```bash
-python -m src.run_experiments --inventory-only
+```powershell
+.\.venv\Scripts\python.exe -m src.run_experiments --inventory-only
 ```
 
 Smoke test used for quick verification:
 
-```bash
-python -m src.run_experiments --quick
+```powershell
+.\.venv\Scripts\python.exe -m src.run_experiments --quick
 ```
 
 Full sweep over all discovered BigDAMA node datasets:
 
-```bash
-python -m src.run_experiments --full
+```powershell
+.\.venv\Scripts\python.exe -m src.run_experiments --full
 ```
 
 Targeted example:
 
-```bash
-python -m src.run_experiments --datasets bgpclear_first,portflap_first --feature-modes ControlPlane,DataPlane,CompleteFeatures
+```powershell
+.\.venv\Scripts\python.exe -m src.run_experiments --datasets bgpclear_first,portflap_first --feature-modes ControlPlane,DataPlane,CompleteFeatures
 ```
+
+K in the k sweep controls alarm aggregation/detection order, not the DenStream micro-cluster count. Use `--max-k` for the alarm sweep. DenStream micro-clusters are uncapped by default; use `--denstream-cluster-cap N` only when explicitly testing a cluster-count cap.
 
 ## Outputs
 
@@ -54,7 +66,7 @@ python -m src.run_experiments --datasets bgpclear_first,portflap_first --feature
 - `results/ground_truth_inventory.csv`: anomaly-window counts and time ranges.
 - `data/processed/sample_predictions.csv`: sample-level outlier flags and scores.
 - `results/alarms.csv`: temporal and spatial alarms for k=1..5.
-- `results/metrics_summary.csv`: precision, recall, F1, false alarms, delay, runtime, and event counts.
+- `results/metrics_summary.csv`: alarm precision, event recall, alarm-event F1, false alarms per hour, detection delay, runtime, and event counts. Compatibility aliases `precision`, `recall`, and `f1` are also retained.
 - `results/event_level_results.csv`: per-event detection and delay records.
 - `results/runtime_summary.csv`: per-node runtime and feature counts.
 - `results/failure_log.csv`: explicit dataset/node failures or skips.
@@ -65,3 +77,5 @@ python -m src.run_experiments --datasets bgpclear_first,portflap_first --feature
 ## Reproducibility Notes
 
 Ground-truth labels are used only after predictions are generated. DenStream and MiniBatchKMeans normalize using the initial `sampleSkip` baseline buffer only. DBSCAN is included as a transductive baseline and is documented separately because it sees the full node matrix at fit time.
+
+Metrics use alarm/event evaluation, not standard sample-level binary classification: alarm precision is computed over generated alarms, event recall is computed over ground-truth events, and alarm-event F1 is the harmonic mean of those two quantities.
