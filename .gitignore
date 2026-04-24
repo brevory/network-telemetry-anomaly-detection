@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Data and generated experiment artifacts can be regenerated.
+data/external/
+data/raw/
+data/processed/
+results/*.json
+results/*.log

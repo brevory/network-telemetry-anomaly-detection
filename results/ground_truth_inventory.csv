@@ -1,0 +1,6 @@
+dataset,ground_truth_file,event_count,nodes,start_min,end_max,events,status
+bgpclear_apptraffic_2hourRun,data\external\OutlierDenStream-BigDama18\GrounTruth\bgpclear_apptraffic_2hourRun.txt,12,leaf1;leaf2;leaf3;leaf4;leaf5;leaf6;leaf7;leaf8;spine1;spine2;spine3;spine4,1519090293,1519097276,clearBGP,available
+bgpclear_first,data\external\OutlierDenStream-BigDama18\GrounTruth\bgpclear_first.txt,11,leaf1;leaf2;leaf6;leaf8;spine1;spine2;spine3;spine4,1498754414,1498756234,clearBGP,available
+bgpclear_no_traffic_2hourRun,data\external\OutlierDenStream-BigDama18\GrounTruth\bgpclear_no_traffic_2hourRun.txt,12,leaf1;leaf2;leaf3;leaf4;leaf5;leaf6;leaf7;leaf8;spine1;spine2;spine3;spine4,1519069509,1519076491,clearBGP,available
+bgpclear_second,data\external\OutlierDenStream-BigDama18\GrounTruth\bgpclear_second.txt,8,leaf1;leaf2;leaf6;leaf8;spine1;spine2;spine3,1501867185,1501868714,clearBGP,available
+portflap_first,data\external\OutlierDenStream-BigDama18\GrounTruth\portflap_first.txt,4,leaf3;spine2,1504286090,1504287600,portflap,available
