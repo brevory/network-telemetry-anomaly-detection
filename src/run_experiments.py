@@ -28,6 +28,9 @@ from .data_loader import (
 from .denstream import run_denstream
 from .plotting import write_all_figures
 from .preprocessing import FEATURE_MODES, preprocess_node_frame
+from . import report_artifacts
+from .report_artifacts import TimelineConfig
+from .validation import validate_run_artifacts
 
 
 RESULTS_DIR = PROJECT_ROOT / "results"
@@ -51,60 +54,19 @@ def _parse_auto_or_float(value: str | float) -> str | float:
 
 
 def _markdown_table(df: pd.DataFrame) -> str:
-    if df.empty:
-        return ""
-    display_df = df.copy()
-    for col in display_df.columns:
-        if pd.api.types.is_float_dtype(display_df[col]):
-            display_df[col] = display_df[col].map(lambda value: "" if pd.isna(value) else f"{value:.4g}")
-        else:
-            display_df[col] = display_df[col].map(lambda value: "" if pd.isna(value) else str(value))
-    columns = [str(col) for col in display_df.columns]
-    lines = [
-        "| " + " | ".join(columns) + " |",
-        "| " + " | ".join(["---"] * len(columns)) + " |",
-    ]
-    for _, row in display_df.iterrows():
-        values = [str(row[col]).replace("|", "\\|") for col in display_df.columns]
-        lines.append("| " + " | ".join(values) + " |")
-    return "\n".join(lines)
+    return report_artifacts.markdown_table(df)
 
 
 def _metric_column(metrics: pd.DataFrame, explicit_name: str, compatibility_name: str) -> str:
-    if explicit_name in metrics.columns:
-        return explicit_name
-    return compatibility_name
+    return report_artifacts.metric_column(metrics, explicit_name, compatibility_name)
 
 
 def _ranked_metrics(metrics: pd.DataFrame) -> pd.DataFrame:
-    if metrics.empty:
-        return metrics
-    f1_col = _metric_column(metrics, "alarm_event_f1", "f1")
-    recall_col = _metric_column(metrics, "event_recall", "recall")
-    precision_col = _metric_column(metrics, "alarm_precision", "precision")
-    return metrics.sort_values([f1_col, recall_col, precision_col], ascending=False)
+    return report_artifacts.ranked_metrics(metrics)
 
 
 def _metric_display_table(metrics: pd.DataFrame) -> pd.DataFrame:
-    if metrics.empty:
-        return metrics
-    column_map = {
-        "dataset": "Dataset",
-        "feature_mode": "Feature mode",
-        "method": "Method",
-        "detection_type": "Detection type",
-        "k": "Alarm k",
-        _metric_column(metrics, "alarm_precision", "precision"): "Alarm precision",
-        _metric_column(metrics, "event_recall", "recall"): "Event recall",
-        _metric_column(metrics, "alarm_event_f1", "f1"): "Alarm-event F1",
-        "false_alarm_rate_per_hour": "False alarms per hour",
-        "detection_delay_seconds_mean": "Mean detection delay",
-        "number_of_alarms": "Number of alarms",
-        "event_level_detection_count": "Detected events",
-        "event_count": "Ground-truth events",
-    }
-    available = [column for column in column_map if column in metrics.columns]
-    return metrics[available].rename(columns=column_map)
+    return report_artifacts.metric_display_table(metrics)
 
 
 def _format_cluster_cap(cluster_cap: int | None) -> str:
@@ -325,9 +287,9 @@ def run(args: argparse.Namespace) -> int:
     all_alarms: list[pd.DataFrame] = []
     all_metrics: list[pd.DataFrame] = []
     all_events: list[pd.DataFrame] = []
+    all_ground_truth: list[pd.DataFrame] = []
     runtime_rows: list[dict] = []
     failures: list[dict] = []
-    representative_truth = pd.DataFrame()
 
     for dataset in datasets:
         truth_file = ground_truth_path(dataset)
@@ -344,8 +306,8 @@ def run(args: argparse.Namespace) -> int:
             )
             continue
         truth = read_ground_truth(truth_file)
-        if representative_truth.empty:
-            representative_truth = truth.copy()
+        truth["dataset"] = dataset
+        all_ground_truth.append(truth.copy())
         files = dataset_files(dataset, nodes)
         if not files:
             failures.append(
@@ -499,6 +461,7 @@ def run(args: argparse.Namespace) -> int:
     alarms_df = pd.concat(all_alarms, ignore_index=True) if all_alarms else pd.DataFrame()
     metrics_df = pd.concat(all_metrics, ignore_index=True) if all_metrics else pd.DataFrame()
     events_df = pd.concat(all_events, ignore_index=True) if all_events else pd.DataFrame()
+    ground_truth_df = pd.concat(all_ground_truth, ignore_index=True) if all_ground_truth else pd.DataFrame()
     runtime_df = pd.DataFrame(runtime_rows)
     failures_df = pd.DataFrame(
         failures,
@@ -520,15 +483,31 @@ def run(args: argparse.Namespace) -> int:
     runtime_df.to_csv(RESULTS_DIR / "runtime_summary.csv", index=False)
     failures_df.to_csv(RESULTS_DIR / "failure_log.csv", index=False)
 
-    write_experiment_log(args, metrics_df, runtime_df, failures_df, datasets, feature_modes)
-    write_presentation_findings(metrics_df, failures_df)
-    write_all_figures(FIGURES_DIR, metrics_df, alarms_df, runtime_df, representative_truth)
+    best_configurations_df = report_artifacts.write_best_configuration_artifacts(metrics_df, RESULTS_DIR)
+    timeline_config = report_artifacts.select_representative_timeline_config(metrics_df, alarms_df)
+    write_experiment_log(args, metrics_df, runtime_df, failures_df, datasets, feature_modes, timeline_config, best_configurations_df)
+    write_presentation_findings(metrics_df, failures_df, best_configurations_df)
+    write_all_figures(FIGURES_DIR, metrics_df, alarms_df, runtime_df, ground_truth_df, timeline_config)
+    validation_warnings = validate_run_artifacts(
+        RESULTS_DIR,
+        FIGURES_DIR,
+        args,
+        datasets,
+        feature_modes,
+        baseline_methods,
+        baseline_feature_modes,
+        timeline_config,
+    )
 
     print(f"Wrote {RESULTS_DIR / 'metrics_summary.csv'}")
     print(f"Wrote {RESULTS_DIR / 'alarms.csv'}")
     print(f"Wrote {FIGURES_DIR / 'timeline_ground_truth_vs_alarms.png'}")
+    print(f"Wrote {RESULTS_DIR / 'best_configurations.csv'}")
+    print(f"Wrote {RESULTS_DIR / 'validation_summary.md'}")
     if not failures_df.empty:
         print(f"Logged {len(failures_df)} failures in {RESULTS_DIR / 'failure_log.csv'}")
+    if validation_warnings:
+        print(f"Validation completed with {len(validation_warnings)} warning(s); see {RESULTS_DIR / 'validation_summary.md'}")
     return 0
 
 
@@ -539,6 +518,8 @@ def write_experiment_log(
     failures: pd.DataFrame,
     datasets: list[str],
     feature_modes: list[str],
+    timeline_config: TimelineConfig | None,
+    best_configurations: pd.DataFrame,
 ) -> None:
     two_hour_included = _includes_two_hour_dataset(datasets)
     lines = [
@@ -602,9 +583,42 @@ def write_experiment_log(
         "- DBSCAN is run as a full-dataset/transductive baseline, so its assumption differs from DenStream streaming inference.",
         "- MiniBatchKMeans is initialized on the initial baseline buffer and updates online on samples not flagged as outliers.",
         "",
-        "## Actual Results",
+        "## Best Overall Configuration",
         "",
     ]
+    if best_configurations.empty:
+        lines.append("No best-configuration summary was generated.")
+    else:
+        best_overall = best_configurations[best_configurations["summary_scope"] == "Best overall"]
+        lines.append(_markdown_table(best_overall if not best_overall.empty else best_configurations.head(1)))
+        lines.append("")
+        lines.append("Full generated summary: `results/best_configurations.csv` and `results/best_configurations.md`.")
+    lines.extend(
+        [
+            "",
+            "## Representative Timeline",
+            "",
+            f"- Configuration: {report_artifacts.timeline_config_text(timeline_config)}",
+        ]
+    )
+    if timeline_config is None:
+        lines.append("- Selection note: no DenStream metric rows were available.")
+    else:
+        lines.extend(
+            [
+                f"- Metric used: {timeline_config.metric_column}",
+                f"- Metric value: {timeline_config.metric_value:.4g}",
+                f"- Alarm count in timeline: {timeline_config.alarm_count}",
+                f"- Selection note: {timeline_config.selection_note}",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+        "## Actual Results",
+        "",
+        ]
+    )
     if metrics.empty:
         lines.append("No metrics were generated.")
     else:
@@ -624,7 +638,7 @@ def write_experiment_log(
     (RESULTS_DIR / "experiment_log.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_presentation_findings(metrics: pd.DataFrame, failures: pd.DataFrame) -> None:
+def write_presentation_findings(metrics: pd.DataFrame, failures: pd.DataFrame, best_configurations: pd.DataFrame) -> None:
     lines = [
         "# Presentation Findings",
         "",
@@ -633,18 +647,17 @@ def write_presentation_findings(metrics: pd.DataFrame, failures: pd.DataFrame) -
         "## Best-performing Configuration",
         "",
     ]
-    if metrics.empty:
+    if best_configurations.empty:
         lines.append("No metrics were generated, so no best configuration can be reported.")
-        best_table = pd.DataFrame()
     else:
-        best_table = _ranked_metrics(metrics).head(10)
-        best = best_table.iloc[0]
+        best_overall = best_configurations[best_configurations["summary_scope"] == "Best overall"]
+        best = (best_overall if not best_overall.empty else best_configurations).iloc[0]
         lines.append(
             f"Best observed row: `{best['method']}` on `{best['dataset']}` with `{best['feature_mode']}`, "
             f"{best['detection_type']} alarm k={int(best['k'])}; "
-            f"Alarm precision={best[_metric_column(metrics, 'alarm_precision', 'precision')]:.3f}, "
-            f"Event recall={best[_metric_column(metrics, 'event_recall', 'recall')]:.3f}, "
-            f"Alarm-event F1={best[_metric_column(metrics, 'alarm_event_f1', 'f1')]:.3f}."
+            f"Alarm precision={best['alarm_precision']:.3f}, "
+            f"Event recall={best['event_recall']:.3f}, "
+            f"Alarm-event F1={best['alarm_event_f1']:.3f}."
         )
         lines.extend(
             [
@@ -653,8 +666,12 @@ def write_presentation_findings(metrics: pd.DataFrame, failures: pd.DataFrame) -
                 "event recall is computed over ground-truth events, and alarm-event F1 combines those quantities.",
             ]
         )
-    lines.extend(["", "## Results Table", ""])
-    lines.append(_markdown_table(_metric_display_table(best_table)) if not best_table.empty else "No results table available.")
+    lines.extend(["", "## Best-configuration Summary Table", ""])
+    lines.append(
+        "This table is generated from `results/best_configurations.csv`, so cited best results come from the same artifact used by the report figures."
+    )
+    lines.append("")
+    lines.append(_markdown_table(best_configurations) if not best_configurations.empty else "No best-configuration table available.")
     lines.extend(
         [
             "",
