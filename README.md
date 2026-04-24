@@ -70,9 +70,11 @@ K in the k sweep controls alarm aggregation/detection order, not the DenStream m
 - `results/event_level_results.csv`: per-event detection and delay records.
 - `results/runtime_summary.csv`: per-node runtime and feature counts.
 - `results/failure_log.csv`: explicit dataset/node failures or skips.
+- `results/best_configurations.csv` and `results/best_configurations.md`: best overall, per-method, per-dataset, per-dataset/method, DenStream feature-mode, and DenStream temporal/spatial configurations.
 - `results/experiment_log.md`: parameters, feature rules, actual result table, runtime summary, and failures.
 - `results/presentation_findings.md`: presentation/report-ready summary.
-- `figures/*.png`: pipeline, timeline, model comparison, feature comparison, k sweep, and runtime plots.
+- `results/validation_summary.md`: generated checks for required files, metric columns, row counts, failures, figures, and the representative timeline configuration.
+- `figures/*.png`: pipeline, representative timeline, fixed-slice method/feature comparisons, best-method comparison, k sweep, and runtime plots.
 
 ## Reproducibility Notes
 

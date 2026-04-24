@@ -1,16 +1,6 @@
-# Presentation Findings
+# Best Configurations
 
-This project reproduces and extends the Putina et al. telemetry-based stream-learning pipeline using Cisco Innovation Edge telemetry data, a modern Python 3 DenStream implementation, temporal/spatial alarm logic, event-level evaluation, and baseline comparisons.
-
-## Best-performing Configuration
-
-Best observed row: `DenStream` on `bgpclear_second` with `ControlPlane`, temporal alarm k=4; Alarm precision=1.000, Event recall=0.875, Alarm-event F1=0.933.
-
-Metric labels use alarm/event evaluation: alarm precision is computed over generated alarms, event recall is computed over ground-truth events, and alarm-event F1 combines those quantities.
-
-## Best-configuration Summary Table
-
-This table is generated from `results/best_configurations.csv`, so cited best results come from the same artifact used by the report figures.
+Rows are selected by highest alarm-event F1, then event recall and alarm precision. Metric ties prefer ControlPlane and temporal configurations.
 
 | summary_scope | summary_key | dataset | feature_mode | method | detection_type | k | alarm_precision | event_recall | alarm_event_f1 | false_alarm_rate_per_hour | detection_delay_seconds_mean | runtime_seconds | number_of_alarms | event_level_detection_count | event_count |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -43,47 +33,3 @@ This table is generated from `results/best_configurations.csv`, so cited best re
 | Best DenStream per feature mode | DataPlane | bgpclear_second | DataPlane | DenStream | spatial | 5 | 0.8 | 0.75 | 0.7742 | 23.26 | 40.5 | 0.8341 | 60 | 6 | 8 |
 | Best DenStream per detection type | spatial | bgpclear_second | ControlPlane | DenStream | spatial | 1 | 0.6909 | 1 | 0.8172 | 65.91 | 2.625 | 0.1775 | 110 | 8 | 8 |
 | Best DenStream per detection type | temporal | bgpclear_second | ControlPlane | DenStream | temporal | 4 | 1 | 0.875 | 0.9333 | 0 | 29.57 | 0.1775 | 8 | 7 | 8 |
-
-## Five Important Observations
-
-1. Metrics are computed from generated alarms after inference; ground-truth windows are not used for training.
-2. ControlPlane, DataPlane, and CompleteFeatures are evaluated with the same DenStream and alarm settings.
-3. Temporal and spatial k sweeps usually trade event recall for fewer false alarms as k increases.
-4. DBSCAN is useful as a comparison point but is not a streaming detector in this implementation.
-5. Runtime is reported per method, feature mode, dataset, and node to expose larger or malformed inputs.
-
-## What Matched the Paper
-
-- The implementation uses the paper reproduction repo's node split, ControlPlane feature list, DenStream defaults, sampleSkip buffer, and temporal/spatial detection criteria.
-
-## What Differed from the Paper
-
-- The original scripts normalize over the loaded node dataframe; this implementation fits normalization only on the initial baseline samples to avoid leakage.
-- The DenStream implementation is a Python 3 port with explicit metrics and persisted artifacts rather than Python 2 scripts/notebook-only analysis.
-
-## Likely Reasons for Differences
-
-- Baseline-only normalization, package version changes, and any reduced quick-run dataset choices can shift epsilon, cluster radii, alarms, and final scores.
-
-## My Own Contributions
-
-1. Modernized and ported the pipeline.
-2. Cleaned and aligned data.
-3. Implemented evaluation.
-4. Added baselines and ablations.
-5. Generated figures.
-
-## Known Limitations
-
-- DBSCAN is transductive and does not have the same streaming assumption as DenStream.
-- Quick runs are meant for smoke testing; use the full command for report-quality coverage.
-- Datasets without parseable ground truth are logged and excluded from scored metrics.
-
-## Future Work
-
-- Add more Cisco scenarios such as administrative shutdown and transceiver pull/reinsert when aligned node-level telemetry and ground truth are available.
-- Add confidence intervals over repeated parameter sweeps and sensitivity plots for lambda, beta, and epsilon policy.
-
-## Failures Logged
-
-No failures were logged.
