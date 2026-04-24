@@ -89,14 +89,14 @@ class DenStream:
         beta: float = 0.05,
         mu: float | str = "auto",
         tp: int = 30,
-        kmax: int = 5,
+        cluster_cap: int | None = None,
     ):
         self.lamb = float(lamb)
         self.epsilon_param = epsilon
         self.beta = float(beta)
         self.mu_param = mu
         self.tp = int(tp)
-        self.kmax = int(kmax)
+        self.cluster_cap = int(cluster_cap) if cluster_cap is not None else None
         self.timestamp = 0
         self.p_micro_clusters: list[MicroCluster] = []
         self.o_micro_clusters: list[MicroCluster] = []
@@ -172,15 +172,19 @@ class DenStream:
             if cluster.weight >= threshold:
                 kept_outliers.append(cluster)
         self.o_micro_clusters = kept_outliers
-        self._enforce_kmax()
+        self._enforce_cluster_cap()
 
-    def _enforce_kmax(self) -> None:
-        if self.kmax <= 0:
+    def _enforce_cluster_cap(self) -> None:
+        if self.cluster_cap is None or self.cluster_cap <= 0:
             return
-        if len(self.p_micro_clusters) > self.kmax:
-            self.p_micro_clusters = sorted(self.p_micro_clusters, key=lambda c: c.weight, reverse=True)[: self.kmax]
-        if len(self.o_micro_clusters) > self.kmax:
-            self.o_micro_clusters = sorted(self.o_micro_clusters, key=lambda c: c.weight, reverse=True)[: self.kmax]
+        if len(self.p_micro_clusters) > self.cluster_cap:
+            self.p_micro_clusters = sorted(self.p_micro_clusters, key=lambda c: c.weight, reverse=True)[
+                : self.cluster_cap
+            ]
+        if len(self.o_micro_clusters) > self.cluster_cap:
+            self.o_micro_clusters = sorted(self.o_micro_clusters, key=lambda c: c.weight, reverse=True)[
+                : self.cluster_cap
+            ]
 
     def partial_fit_predict(self, x: np.ndarray) -> Prediction:
         if self.epsilon is None or self.mu is None or self.beta_mu is None:
@@ -228,7 +232,7 @@ class DenStream:
         if self.tp > 0 and self.timestamp % self.tp == 0:
             self._prune()
         else:
-            self._enforce_kmax()
+            self._enforce_cluster_cap()
 
         distance = core_dist if np.isfinite(core_dist) else nearest_outlier_dist
         if not np.isfinite(distance):
@@ -254,13 +258,13 @@ def run_denstream(
     beta: float = 0.05,
     epsilon: float | str = "auto",
     mu: float | str = "auto",
-    kmax: int = 5,
+    cluster_cap: int | None = None,
     tp: int = 30,
 ) -> tuple[list[dict], dict]:
     X = np.asarray(X, dtype=float)
     if X.shape[0] <= sample_skip:
         raise ValueError(f"Need more than sample_skip={sample_skip} samples; got {X.shape[0]}.")
-    model = DenStream(lamb=lamb, epsilon=epsilon, beta=beta, mu=mu, tp=tp, kmax=kmax)
+    model = DenStream(lamb=lamb, epsilon=epsilon, beta=beta, mu=mu, tp=tp, cluster_cap=cluster_cap)
     model.fit_initial(X[:sample_skip])
 
     records: list[dict] = []
@@ -297,7 +301,7 @@ def run_denstream(
         "beta": beta,
         "epsilon": model.epsilon,
         "mu": model.mu,
-        "kmax": kmax,
+        "cluster_cap": cluster_cap,
         "tp": tp,
         "sample_skip": sample_skip,
     }

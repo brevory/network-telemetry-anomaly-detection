@@ -70,6 +70,66 @@ def _markdown_table(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def _metric_column(metrics: pd.DataFrame, explicit_name: str, compatibility_name: str) -> str:
+    if explicit_name in metrics.columns:
+        return explicit_name
+    return compatibility_name
+
+
+def _ranked_metrics(metrics: pd.DataFrame) -> pd.DataFrame:
+    if metrics.empty:
+        return metrics
+    f1_col = _metric_column(metrics, "alarm_event_f1", "f1")
+    recall_col = _metric_column(metrics, "event_recall", "recall")
+    precision_col = _metric_column(metrics, "alarm_precision", "precision")
+    return metrics.sort_values([f1_col, recall_col, precision_col], ascending=False)
+
+
+def _metric_display_table(metrics: pd.DataFrame) -> pd.DataFrame:
+    if metrics.empty:
+        return metrics
+    column_map = {
+        "dataset": "Dataset",
+        "feature_mode": "Feature mode",
+        "method": "Method",
+        "detection_type": "Detection type",
+        "k": "Alarm k",
+        _metric_column(metrics, "alarm_precision", "precision"): "Alarm precision",
+        _metric_column(metrics, "event_recall", "recall"): "Event recall",
+        _metric_column(metrics, "alarm_event_f1", "f1"): "Alarm-event F1",
+        "false_alarm_rate_per_hour": "False alarms per hour",
+        "detection_delay_seconds_mean": "Mean detection delay",
+        "number_of_alarms": "Number of alarms",
+        "event_level_detection_count": "Detected events",
+        "event_count": "Ground-truth events",
+    }
+    available = [column for column in column_map if column in metrics.columns]
+    return metrics[available].rename(columns=column_map)
+
+
+def _format_cluster_cap(cluster_cap: int | None) -> str:
+    if cluster_cap is None or cluster_cap <= 0:
+        return "none"
+    return str(cluster_cap)
+
+
+def _includes_two_hour_dataset(datasets: Iterable[str]) -> bool:
+    return any("2hour" in dataset.lower() or "two-hour" in dataset.lower() for dataset in datasets)
+
+
+def _run_scope_text(args: argparse.Namespace, datasets: list[str]) -> str:
+    if args.datasets:
+        return "This run used an explicit dataset list: " + ", ".join(datasets) + "."
+    if args.quick:
+        return "This run used --quick and evaluated the quick smoke-test subset only."
+    if args.full:
+        return (
+            "This run used --full and included all discovered BigDAMA node datasets, "
+            "including the two-hour BGP Clear datasets."
+        )
+    return "This run used the default dataset selection and evaluated all discovered BigDAMA node datasets."
+
+
 def _prediction_frame(
     records: list[dict],
     dataset: str,
@@ -126,14 +186,14 @@ def _empty_metric_rows(
     truth: pd.DataFrame,
     runtime_seconds: float,
     total_time_span_seconds: float,
-    kmax: int,
+    alarm_max_k: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     rows = []
     event_rows = []
     hours = total_time_span_seconds / 3600.0 if total_time_span_seconds > 0 else np.nan
     false_alarm_rate = 0.0 if np.isfinite(hours) and hours > 0 else np.nan
     for detection_type in ["temporal", "spatial"]:
-        for k in range(1, kmax + 1):
+        for k in range(1, alarm_max_k + 1):
             rows.append(
                 {
                     "dataset": dataset,
@@ -141,6 +201,10 @@ def _empty_metric_rows(
                     "method": method,
                     "detection_type": detection_type,
                     "k": k,
+                    "alarm_precision": 0.0,
+                    "event_recall": 0.0,
+                    "alarm_event_f1": 0.0,
+                    # Compatibility aliases retained for existing plotting/notebook/report code.
                     "precision": 0.0,
                     "recall": 0.0,
                     "f1": 0.0,
@@ -185,10 +249,10 @@ def _complete_metric_grid(
     truth: pd.DataFrame,
     runtime_seconds: float,
     total_time_span_seconds: float,
-    kmax: int,
+    alarm_max_k: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     empty_metrics, empty_events = _empty_metric_rows(
-        dataset, feature_mode, method, truth, runtime_seconds, total_time_span_seconds, kmax
+        dataset, feature_mode, method, truth, runtime_seconds, total_time_span_seconds, alarm_max_k
     )
     if actual_metrics.empty:
         return empty_metrics, empty_events
@@ -217,18 +281,18 @@ def _evaluate_predictions(
     feature_mode: str,
     method: str,
     runtime_seconds: float,
-    kmax: int,
+    alarm_max_k: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     from .evaluation import evaluate_alarms
 
-    alarms = build_alarms(predictions, kmax=kmax)
+    alarms = build_alarms(predictions, max_k=alarm_max_k)
     if predictions.empty:
         span = 0.0
     else:
         span = float(predictions["timestamp"].max() - predictions["timestamp"].min())
     actual_metrics, actual_events = evaluate_alarms(alarms, truth, dataset, runtime_seconds, span)
     metrics, events = _complete_metric_grid(
-        actual_metrics, actual_events, dataset, feature_mode, method, truth, runtime_seconds, span, kmax
+        actual_metrics, actual_events, dataset, feature_mode, method, truth, runtime_seconds, span, alarm_max_k
     )
     return alarms, metrics, events
 
@@ -312,7 +376,7 @@ def run(args: argparse.Namespace) -> int:
                         beta=args.beta,
                         epsilon=args.epsilon,
                         mu=args.mu,
-                        kmax=args.kmax,
+                        cluster_cap=args.denstream_cluster_cap,
                         tp=args.tp,
                     )
                     elapsed = time.perf_counter() - start
@@ -328,6 +392,7 @@ def run(args: argparse.Namespace) -> int:
                                 "feature_count": len(prep.feature_names),
                                 "epsilon_used": metadata["epsilon"],
                                 "mu_used": metadata["mu"],
+                                "denstream_cluster_cap": metadata["cluster_cap"],
                             },
                         )
                     )
@@ -359,7 +424,7 @@ def run(args: argparse.Namespace) -> int:
                 predictions = pd.concat(denstream_predictions, ignore_index=True)
                 all_predictions.append(predictions)
                 alarms, metrics, events = _evaluate_predictions(
-                    predictions, truth, dataset, feature_mode, "DenStream", denstream_runtime, args.kmax
+                    predictions, truth, dataset, feature_mode, "DenStream", denstream_runtime, args.alarm_max_k
                 )
                 all_alarms.append(alarms)
                 all_metrics.append(metrics)
@@ -424,7 +489,7 @@ def run(args: argparse.Namespace) -> int:
                         predictions = pd.concat(baseline_predictions, ignore_index=True)
                         all_predictions.append(predictions)
                         alarms, metrics, events = _evaluate_predictions(
-                            predictions, truth, dataset, feature_mode, baseline_method, baseline_runtime, args.kmax
+                            predictions, truth, dataset, feature_mode, baseline_method, baseline_runtime, args.alarm_max_k
                         )
                         all_alarms.append(alarms)
                         all_metrics.append(metrics)
@@ -455,7 +520,7 @@ def run(args: argparse.Namespace) -> int:
     runtime_df.to_csv(RESULTS_DIR / "runtime_summary.csv", index=False)
     failures_df.to_csv(RESULTS_DIR / "failure_log.csv", index=False)
 
-    write_experiment_log(args, metrics_df, runtime_df, failures_df)
+    write_experiment_log(args, metrics_df, runtime_df, failures_df, datasets, feature_modes)
     write_presentation_findings(metrics_df, failures_df)
     write_all_figures(FIGURES_DIR, metrics_df, alarms_df, runtime_df, representative_truth)
 
@@ -467,7 +532,15 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
-def write_experiment_log(args: argparse.Namespace, metrics: pd.DataFrame, runtime: pd.DataFrame, failures: pd.DataFrame) -> None:
+def write_experiment_log(
+    args: argparse.Namespace,
+    metrics: pd.DataFrame,
+    runtime: pd.DataFrame,
+    failures: pd.DataFrame,
+    datasets: list[str],
+    feature_modes: list[str],
+) -> None:
+    two_hour_included = _includes_two_hour_dataset(datasets)
     lines = [
         "# Experiment Log",
         "",
@@ -494,14 +567,27 @@ def write_experiment_log(args: argparse.Namespace, metrics: pd.DataFrame, runtim
         f"- beta: {args.beta}",
         f"- epsilon: {args.epsilon}",
         f"- mu: {args.mu}",
-        f"- Kmax: {args.kmax}",
+        f"- alarm_max_k: {args.alarm_max_k}",
+        f"- denstream_cluster_cap: {_format_cluster_cap(args.denstream_cluster_cap)}",
         f"- pruning interval tp: {args.tp}",
         "",
         "## Run Scope",
         "",
-        f"- Requested datasets: {args.datasets if args.datasets else ('bgpclear_first' if args.quick else 'all discovered datasets')}",
-        f"- Requested feature modes: {args.feature_modes if args.feature_modes else ','.join(FEATURE_MODES)}",
-        "- Use `python -m src.run_experiments --full` to include the larger two-hour BGP Clear datasets.",
+        _run_scope_text(args, datasets),
+        "",
+        f"- Requested datasets: {', '.join(datasets)}",
+        f"- Requested feature modes: {', '.join(feature_modes)}",
+        f"- Two-hour datasets included: {'yes' if two_hour_included else 'no'}",
+        f"- alarm_max_k: {args.alarm_max_k}",
+        f"- denstream_cluster_cap: {_format_cluster_cap(args.denstream_cluster_cap)}",
+        "",
+        "## Metric Definitions",
+        "",
+        "- Alarm precision: true-positive alarms divided by generated alarms.",
+        "- Event recall: detected ground-truth events divided by ground-truth events.",
+        "- Alarm-event F1: harmonic mean of alarm precision and event recall.",
+        "- False alarms per hour: false-positive alarms divided by evaluated time span.",
+        "- Mean detection delay: average first-alarm delay for detected events.",
         "",
         "## Feature Modes",
         "",
@@ -522,8 +608,8 @@ def write_experiment_log(args: argparse.Namespace, metrics: pd.DataFrame, runtim
     if metrics.empty:
         lines.append("No metrics were generated.")
     else:
-        best = metrics.sort_values(["f1", "recall", "precision"], ascending=False).head(10)
-        lines.append(_markdown_table(best))
+        best = _ranked_metrics(metrics).head(10)
+        lines.append(_markdown_table(_metric_display_table(best)))
     lines.extend(["", "## Runtime Summary", ""])
     if runtime.empty:
         lines.append("No runtime records were generated.")
@@ -551,15 +637,24 @@ def write_presentation_findings(metrics: pd.DataFrame, failures: pd.DataFrame) -
         lines.append("No metrics were generated, so no best configuration can be reported.")
         best_table = pd.DataFrame()
     else:
-        best_table = metrics.sort_values(["f1", "recall", "precision"], ascending=False).head(10)
+        best_table = _ranked_metrics(metrics).head(10)
         best = best_table.iloc[0]
         lines.append(
             f"Best observed row: `{best['method']}` on `{best['dataset']}` with `{best['feature_mode']}`, "
-            f"{best['detection_type']} k={int(best['k'])}; precision={best['precision']:.3f}, "
-            f"recall={best['recall']:.3f}, F1={best['f1']:.3f}."
+            f"{best['detection_type']} alarm k={int(best['k'])}; "
+            f"Alarm precision={best[_metric_column(metrics, 'alarm_precision', 'precision')]:.3f}, "
+            f"Event recall={best[_metric_column(metrics, 'event_recall', 'recall')]:.3f}, "
+            f"Alarm-event F1={best[_metric_column(metrics, 'alarm_event_f1', 'f1')]:.3f}."
+        )
+        lines.extend(
+            [
+                "",
+                "Metric labels use alarm/event evaluation: alarm precision is computed over generated alarms, "
+                "event recall is computed over ground-truth events, and alarm-event F1 combines those quantities.",
+            ]
         )
     lines.extend(["", "## Results Table", ""])
-    lines.append(_markdown_table(best_table) if not best_table.empty else "No results table available.")
+    lines.append(_markdown_table(_metric_display_table(best_table)) if not best_table.empty else "No results table available.")
     lines.extend(
         [
             "",
@@ -567,7 +662,7 @@ def write_presentation_findings(metrics: pd.DataFrame, failures: pd.DataFrame) -
             "",
             "1. Metrics are computed from generated alarms after inference; ground-truth windows are not used for training.",
             "2. ControlPlane, DataPlane, and CompleteFeatures are evaluated with the same DenStream and alarm settings.",
-            "3. Temporal and spatial k sweeps usually trade recall for fewer false alarms as k increases.",
+            "3. Temporal and spatial k sweeps usually trade event recall for fewer false alarms as k increases.",
             "4. DBSCAN is useful as a comparison point but is not a streaming detector in this implementation.",
             "5. Runtime is reported per method, feature mode, dataset, and node to expose larger or malformed inputs.",
             "",
@@ -625,7 +720,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--beta", type=float, default=0.05)
     parser.add_argument("--epsilon", default="auto")
     parser.add_argument("--mu", default="auto")
-    parser.add_argument("--kmax", type=int, default=5)
+    parser.add_argument(
+        "--max-k",
+        "--kmax",
+        dest="alarm_max_k",
+        type=int,
+        default=5,
+        help="Maximum alarm aggregation/detection k to sweep.",
+    )
+    parser.add_argument(
+        "--denstream-cluster-cap",
+        type=int,
+        default=None,
+        help="Optional cap for DenStream potential and outlier micro-clusters; default is no cap.",
+    )
     parser.add_argument("--tp", type=int, default=30)
     return parser
 

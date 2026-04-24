@@ -75,8 +75,8 @@ def spatial_alarms(predictions: pd.DataFrame, k_values: range | list[int] = rang
     return pd.DataFrame(rows)
 
 
-def build_alarms(predictions: pd.DataFrame, kmax: int = 5) -> pd.DataFrame:
-    k_values = range(1, kmax + 1)
+def build_alarms(predictions: pd.DataFrame, max_k: int = 5) -> pd.DataFrame:
+    k_values = range(1, max_k + 1)
     frames = [temporal_alarms(predictions, k_values), spatial_alarms(predictions, k_values)]
     frames = [frame for frame in frames if not frame.empty]
     if not frames:

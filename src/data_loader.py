@@ -172,6 +172,15 @@ def dataset_files(dataset: str, nodes: Iterable[str] | None = None) -> list[Node
 
 
 def build_data_inventory() -> pd.DataFrame:
+    columns = [
+        "source",
+        "scenario_name",
+        "node",
+        "csv_file",
+        "case_or_ground_truth_file",
+        "file_size_bytes",
+        "status",
+    ]
     rows = []
     for record in discover_node_datasets():
         truth = ground_truth_path(record.dataset)
@@ -206,10 +215,24 @@ def build_data_inventory() -> pd.DataFrame:
                         "status": "metadata_available",
                     }
                 )
-    return pd.DataFrame(rows).sort_values(["source", "scenario_name", "node", "csv_file"]).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows, columns=columns)
+        .sort_values(["source", "scenario_name", "node", "csv_file"])
+        .reset_index(drop=True)
+    )
 
 
 def build_ground_truth_inventory() -> pd.DataFrame:
+    columns = [
+        "dataset",
+        "ground_truth_file",
+        "event_count",
+        "nodes",
+        "start_min",
+        "end_max",
+        "events",
+        "status",
+    ]
     rows = []
     for dataset in available_datasets():
         path = ground_truth_path(dataset)
@@ -254,7 +277,7 @@ def build_ground_truth_inventory() -> pd.DataFrame:
                     "status": f"failed_to_parse: {exc}",
                 }
             )
-    return pd.DataFrame(rows).sort_values("dataset").reset_index(drop=True)
+    return pd.DataFrame(rows, columns=columns).sort_values("dataset").reset_index(drop=True)
 
 
 def write_inventories(results_dir: Path | None = None) -> tuple[Path, Path]:

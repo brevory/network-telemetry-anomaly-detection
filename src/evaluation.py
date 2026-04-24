@@ -1,4 +1,4 @@
-"""Ground-truth evaluation for sample alarms."""
+"""Ground-truth evaluation for generated alarms."""
 
 from __future__ import annotations
 
@@ -28,6 +28,12 @@ def evaluate_alarms(
     runtime_seconds: float,
     total_time_span_seconds: float | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Evaluate alarm detections against ground-truth event windows.
+
+    This is an alarm/event evaluation, not standard sample-level binary
+    classification. Precision is computed over alarms; recall is computed over
+    ground-truth events; F1 combines those two quantities.
+    """
     metric_rows = []
     event_rows = []
     if alarms.empty:
@@ -76,9 +82,13 @@ def evaluate_alarms(
                 }
             )
 
-        precision = true_positive_alarms / len(group) if len(group) else 0.0
-        recall = detected_events / len(ground_truth) if len(ground_truth) else 0.0
-        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0
+        alarm_precision = true_positive_alarms / len(group) if len(group) else 0.0
+        event_recall = detected_events / len(ground_truth) if len(ground_truth) else 0.0
+        alarm_event_f1 = (
+            2 * alarm_precision * event_recall / (alarm_precision + event_recall)
+            if alarm_precision + event_recall > 0
+            else 0.0
+        )
         hours = total_time_span_seconds / 3600.0 if total_time_span_seconds and total_time_span_seconds > 0 else np.nan
         false_alarm_rate = false_alarms / hours if np.isfinite(hours) and hours > 0 else np.nan
         metric_rows.append(
@@ -88,9 +98,13 @@ def evaluate_alarms(
                 "method": method,
                 "detection_type": detection_type,
                 "k": int(k),
-                "precision": precision,
-                "recall": recall,
-                "f1": f1,
+                "alarm_precision": alarm_precision,
+                "event_recall": event_recall,
+                "alarm_event_f1": alarm_event_f1,
+                # Compatibility aliases retained for existing plotting/notebook/report code.
+                "precision": alarm_precision,
+                "recall": event_recall,
+                "f1": alarm_event_f1,
                 "true_positive_alarms": true_positive_alarms,
                 "false_positives": false_alarms,
                 "false_alarm_rate_per_hour": false_alarm_rate,

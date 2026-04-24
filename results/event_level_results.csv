@@ -741,7 +741,7 @@ bgpclear_first,CompleteFeatures,DenStream,spatial,3,6,spine1,clearBGP,1498755721
 bgpclear_first,CompleteFeatures,DenStream,spatial,3,7,spine3,clearBGP,1498755729.0,1498755944.0,True,1498755730.0,1.0
 bgpclear_first,CompleteFeatures,DenStream,spatial,3,8,spine1,clearBGP,1498756039.0,1498756234.0,True,1498756045.0,6.0
 bgpclear_first,CompleteFeatures,DenStream,spatial,3,9,spine2,clearBGP,1498756048.0,1498756234.0,True,1498756049.0,1.0
-bgpclear_first,CompleteFeatures,DenStream,spatial,3,10,spine3,clearBGP,1498756046.0,1498756234.0,True,1498756064.0,18.0
+bgpclear_first,CompleteFeatures,DenStream,spatial,3,10,spine3,clearBGP,1498756046.0,1498756234.0,True,1498756073.0,27.0
 bgpclear_first,CompleteFeatures,DenStream,spatial,4,0,leaf1,clearBGP,1498754414.0,1498754597.0,True,1498754418.0,4.0
 bgpclear_first,CompleteFeatures,DenStream,spatial,4,1,spine4,clearBGP,1498754654.0,1498754843.0,True,1498754694.0,40.0
 bgpclear_first,CompleteFeatures,DenStream,spatial,4,2,leaf8,clearBGP,1498754883.0,1498755073.0,True,1498754892.0,9.0
@@ -1071,7 +1071,7 @@ bgpclear_first,DataPlane,DenStream,spatial,3,6,spine1,clearBGP,1498755721.0,1498
 bgpclear_first,DataPlane,DenStream,spatial,3,7,spine3,clearBGP,1498755729.0,1498755944.0,True,1498755734.0,5.0
 bgpclear_first,DataPlane,DenStream,spatial,3,8,spine1,clearBGP,1498756039.0,1498756234.0,True,1498756049.0,10.0
 bgpclear_first,DataPlane,DenStream,spatial,3,9,spine2,clearBGP,1498756048.0,1498756234.0,True,1498756049.0,1.0
-bgpclear_first,DataPlane,DenStream,spatial,3,10,spine3,clearBGP,1498756046.0,1498756234.0,True,1498756064.0,18.0
+bgpclear_first,DataPlane,DenStream,spatial,3,10,spine3,clearBGP,1498756046.0,1498756234.0,True,1498756073.0,27.0
 bgpclear_first,DataPlane,DenStream,spatial,4,0,leaf1,clearBGP,1498754414.0,1498754597.0,True,1498754418.0,4.0
 bgpclear_first,DataPlane,DenStream,spatial,4,1,spine4,clearBGP,1498754654.0,1498754843.0,True,1498754685.0,31.0
 bgpclear_first,DataPlane,DenStream,spatial,4,2,leaf8,clearBGP,1498754883.0,1498755073.0,True,1498754892.0,9.0
